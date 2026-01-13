@@ -24,7 +24,8 @@ def main(args):
         data, num_replicas=dist.world_size, rank=dist.local_rank, shuffle=False
     )
     data_loader = torch.utils.data.DataLoader(
-        data, sampler=data_sampler, batch_size=args.batch_size // dist.world_size, num_workers=8, drop_last=False
+        data, sampler=data_sampler, batch_size=args.batch_size // dist.world_size, 
+        num_workers=8, drop_last=False,
     )
 
     for x, _ in data_loader:

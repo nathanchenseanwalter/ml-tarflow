@@ -64,11 +64,12 @@ class Distributed:
             self.local_rank = int(os.environ['LOCAL_RANK'])
             self.world_size = int(os.environ['WORLD_SIZE'])
             self.distributed = True
-            torch.distributed.init_process_group('nccl', 'env://', timeout=datetime.timedelta(minutes=10))
+            torch.cuda.set_device(self.local_rank)
+            torch.distributed.init_process_group('nccl', 'env://', timeout=datetime.timedelta(minutes=10), device_id=torch.device(f'cuda:{self.local_rank}'))
         else:  # When running with python for debugging
             self.rank, self.local_rank, self.world_size = 0, 0, 1
             self.distributed = False
-        torch.cuda.set_device(self.local_rank)
+            torch.cuda.set_device(self.local_rank)
         self.barrier()
 
     def barrier(self) -> None:
@@ -83,7 +84,7 @@ class Distributed:
         return torch.cat(x_list)
 
     def __del__(self):
-        if self.distributed:
+        if self.distributed and torch.distributed.is_initialized():
             torch.distributed.destroy_process_group()
 
 
@@ -137,7 +138,9 @@ def get_data(dataset: str, img_size: int, folder: pathlib.Path) -> tuple[torch.u
     if dataset == 'imagenet64':
         data = tv.datasets.ImageFolder(str(folder / 'imagenet64'), transform=transform)
     elif dataset == 'imagenet':
-        data = tv.datasets.ImageFolder(str(folder / 'imagenet'), transform=transform)
+        # data = tv.datasets.ImageFolder(str(folder / 'imagenet'), transform=transform)
+        datapath = "/scratch/gpfs/DATASETS/imagenet/ilsvrc_2012_2017_face_obfuscation"
+        data = tv.datasets.ImageFolder(datapath, transform=transform)
     elif dataset == 'afhq':
         data = tv.datasets.ImageFolder(str(folder / 'afhq'), transform=transform)
     else:

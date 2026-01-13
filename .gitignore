@@ -1,0 +1,7 @@
+/data
+/logs
+/runs
+/scripts
+
+*.pth
+*.pyc
