@@ -6,7 +6,9 @@ import argparse
 import json
 import logging
 import pathlib
+import sys
 import time
+import warnings
 
 import torch
 import torch.amp
@@ -28,12 +30,18 @@ def main(args):
     device = torch.device(f'cuda:{dist.local_rank}' if torch.cuda.is_available() else 'cpu')
     device_type = 'cuda' if device.type == 'cuda' else 'cpu'
 
-    # logging
+    # logging - use stdout instead of stderr
     logging.basicConfig(
         format='%(asctime)s - %(levelname)s - %(message)s',
         level=logging.INFO if dist.rank == 0 else logging.WARNING,
+        stream=sys.stdout,
+        force=True,  # override any existing handlers
     )
     logger = logging.getLogger(__name__)
+    
+    # only show warnings on rank 0 to avoid repeated messages
+    if dist.rank != 0:
+        warnings.filterwarnings('ignore')
 
     # print config
     logger.info('Config:')
@@ -112,7 +120,7 @@ def main(args):
     use_fp16 = args.precision == 'fp16'
     use_amp = args.noise_type == 'gaussian' and args.precision != 'fp32'
     amp_dtype = torch.float16 if use_fp16 else torch.bfloat16
-    scaler = torch.amp.GradScaler(enabled=use_fp16)
+    scaler = torch.amp.GradScaler(enabled=use_fp16) # pyright: ignore
 
     # tracking best model
     best_fid = float('inf')
@@ -142,13 +150,13 @@ def main(args):
     if args.resume:
         resume_path = pathlib.Path(args.resume)
         if resume_path.exists():
-            ckpt = torch.load(resume_path, map_location='cpu')
+            ckpt = torch.load(resume_path, map_location='cpu', weights_only=True)
             model.load_state_dict(ckpt)
             logger.info(f'Loaded model checkpoint from {resume_path}')
             
             opt_ckpt_path = pathlib.Path(str(resume_path).replace('_model_', '_opt_'))
             if opt_ckpt_path.exists():
-                ckpt = torch.load(opt_ckpt_path, map_location='cpu')
+                ckpt = torch.load(opt_ckpt_path, map_location='cpu', weights_only=True)
                 optimizer.load_state_dict(ckpt['optimizer'])
                 lr_schedule.load_state_dict(ckpt['lr_schedule'])
                 start_epoch = ckpt.get('epoch', 0)
@@ -301,6 +309,14 @@ def main(args):
                 if fid_score < best_fid:
                     best_fid = fid_score
                     torch.save(model.state_dict(), best_model_ckpt_file)
+                    # also save optimizer state for best model
+                    best_opt_ckpt_file = args.logdir / f'{args.dataset}_opt_{model_name}.pth'
+                    torch.save({
+                        'optimizer': optimizer.state_dict(), 
+                        'lr_schedule': lr_schedule.state_dict(),
+                        'epoch': epoch + 1,
+                        'best_fid': best_fid,
+                    }, best_opt_ckpt_file)
                     logger.info(f'New best FID: {best_fid:.2f} - saved to {best_model_ckpt_file}')
             dist.barrier()
 

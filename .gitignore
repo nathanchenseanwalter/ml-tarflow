@@ -1,7 +1,9 @@
+.venv
+.ghvenv
+
 /data
 /logs
 /runs
-/scripts
 
 *.pth
 *.pyc
